@@ -46,6 +46,10 @@ prepare() {
 	sed -i "s/DISTRIBUTION_VERSION = '0.0.0'/DISTRIBUTION_VERSION = '$pkgver'/g" \
 		userchrome/profile/chrome/pwa/chrome.sys.mjs
 
+	# Keep Cargo.lock in sync with the bumped package version, otherwise the
+	# --locked / --frozen flags below refuse to build the modified manifest
+	sed -i '/^name = "firefoxpwa"$/{n;s/^version = "0.0.0"$/version = "'"$pkgver"'"/}' Cargo.lock
+
 	cargo fetch --target="$CTARGET" --locked
 }
 
