@@ -53,6 +53,25 @@ function readConfig () {
  * @returns {ChromeWindow&Window} - The new window.
  */
 function launchSite (siteConfig, urlList, isStartup) {
+  // VALIDATION PATCH (background notifications, option A):
+  // When background mode is enabled, an existing instance of this web app may be
+  // running with its window hidden (kept alive for Web Push). Reveal and focus that
+  // window instead of opening a new one.
+  if (Services.prefs.getBoolPref('firefoxpwa.keepRunningInBackground', false)) {
+    for (const win of Services.wm.getEnumerator('navigator:browser')) {
+      if (win.gFFPWASiteConfig?.ulid === siteConfig.ulid) {
+        try {
+          win.docShell.treeOwner
+            .QueryInterface(Ci.nsIInterfaceRequestor)
+            .getInterface(Ci.nsIBaseWindow).visibility = true;
+        } catch (_) {}
+        if (win.windowState === win.STATE_MINIMIZED) win.restore?.();
+        win.focus();
+        return win;
+      }
+    }
+  }
+
   // Handle launching a web app when the same web app is already opened
   // We have to specify pref directly as we cannot access ChromeLoader yet
   const launchType = Services.prefs.getIntPref('firefoxpwa.launchType', 0);

@@ -35,6 +35,7 @@ class ChromeLoader {
   static PREF_OPEN_IN_EXISTING_WINDOW = 'firefoxpwa.openInExistingWindow';
   static PREF_ENABLE_TABS_MODE = 'firefoxpwa.enableTabsMode';
   static PREF_ENABLE_HIDING_ICON_BAR = 'firefoxpwa.enableHidingIconBar';
+  static PREF_KEEP_RUNNING_IN_BACKGROUND = 'firefoxpwa.keepRunningInBackground';
   static PREF_ALLOWED_DOMAINS = 'firefoxpwa.allowedDomains';
   static PREF_SHORTCUTS_CLOSE_TAB = 'firefoxpwa.shortcuts.closeTab';
   static PREF_SHORTCUTS_CLOSE_WINDOW = 'firefoxpwa.shortcuts.closeWindow';

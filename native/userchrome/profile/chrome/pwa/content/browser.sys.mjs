@@ -55,6 +55,7 @@ class PwaBrowser {
     setTimeout(() => { this.disableNewTabShortcuts() });
     this.renameHomepageWidget();
     this.handleKioskMode();
+    this.handleBackgroundClose();
   }
 
   loadLocalizationSources () {
@@ -815,6 +816,65 @@ class PwaBrowser {
         window.fullScreen = true;
       }
     });
+  }
+
+  // VALIDATION PATCH (background notifications, option A):
+  // Intercept the window close to (1) verify that the window manager / Plasma Mobile
+  // "close" gesture actually goes through `WindowIsClosing`, and (2) keep the process
+  // and its Web Push connection alive by hiding the window instead of quitting.
+  //
+  // Opt-in: set `firefoxpwa.keepRunningInBackground` to `true` (about:config) to test.
+  // Logs go to stderr (visible in the launching terminal) and the Browser Console.
+  handleBackgroundClose () {
+    // Make `dump()` visible on stderr so logs show up in the launching terminal
+    try { xPref.set('browser.dom.window.dump.enabled', true); } catch (_) {}
+
+    const log = (message) => {
+      const line = `[FFPWA background-close] ${message}`;
+      try { dump(line + '\n'); } catch (_) {}
+      try { Services.console.logStringMessage(line); } catch (_) {}
+    };
+
+    const keepRunning = () => xPref.get(ChromeLoader.PREF_KEEP_RUNNING_IN_BACKGROUND, false, false);
+
+    const installHook = () => {
+      // `WindowIsClosing` is defined by browser.js; it may not be ready yet
+      if (typeof window.WindowIsClosing !== 'function') {
+        setTimeout(installHook, 100);
+        return;
+      }
+
+      const originalWindowIsClosing = window.WindowIsClosing;
+      window.WindowIsClosing = (...args) => {
+        log(`WindowIsClosing reached (keepRunningInBackground=${keepRunning()})`);
+
+        if (keepRunning()) {
+          this.hideToBackground();
+          log('window hidden; process kept alive for notifications');
+          // Returning false cancels the close, so the window (and process) survives
+          return false;
+        }
+
+        return originalWindowIsClosing.apply(window, args);
+      };
+
+      log('close hook installed');
+    };
+
+    installHook();
+  }
+
+  hideToBackground () {
+    try {
+      const baseWindow = window.docShell.treeOwner
+        .QueryInterface(Ci.nsIInterfaceRequestor)
+        .getInterface(Ci.nsIBaseWindow);
+      baseWindow.visibility = false;
+    } catch (error) {
+      // Fall back to minimizing if the window can't be fully hidden on this platform
+      try { dump(`[FFPWA background-close] visibility hide failed (${error}); minimizing\n`); } catch (_) {}
+      window.minimize();
+    }
   }
 
   //////////////////////////////
