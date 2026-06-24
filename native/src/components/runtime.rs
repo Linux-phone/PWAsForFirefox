@@ -444,6 +444,10 @@ impl Runtime {
 
         info!("Linking the runtime");
 
+        // The runtime directory may not exist yet (e.g. on a fresh install that never
+        // downloaded a Mozilla runtime), so create it before copying or linking into it.
+        create_dir_all(&self.directory).context("Failed to create the runtime directory")?;
+
         for entry in read_dir(&source)?.flatten() {
             let entry = entry.path();
             let file_name = match entry.file_name().and_then(|name| name.to_str()) {
@@ -456,21 +460,26 @@ impl Runtime {
             match file_name {
                 // Use a different branch for the "defaults" folder due to the patches to apply afterwhile
                 "defaults" => {
-                    create_dir_all(self.directory.join("defaults/pref"))?;
+                    create_dir_all(self.directory.join("defaults/pref"))
+                        .context("Failed to create the runtime defaults directory")?;
                     symlink(
                         entry.join("defaults/pref/channel-prefs.js"),
                         self.directory.join("defaults/pref/channel-prefs.js"),
-                    )?;
+                    )
+                    .context("Failed to link channel-prefs.js")?;
                 }
                 "firefox-bin" => {
-                    copy(entry, self.directory.join("firefox-bin"))?;
+                    copy(&entry, self.directory.join("firefox-bin"))
+                        .context("Failed to copy firefox-bin")?;
                 }
                 "firefox" => {
-                    copy(entry, self.directory.join("firefox"))?;
+                    copy(&entry, self.directory.join("firefox"))
+                        .context("Failed to copy firefox")?;
                 }
                 _ => {
                     let link = self.directory.join(file_name);
-                    symlink(entry, link)?;
+                    symlink(&entry, &link)
+                        .with_context(|| format!("Failed to link {}", link.display()))?;
                 }
             }
         }
