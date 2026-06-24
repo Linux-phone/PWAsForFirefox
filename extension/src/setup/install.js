@@ -96,8 +96,14 @@ async function checkNativeConnection () {
  Runtime Installation
  ****************************/
 
+// Whether the native program reported that a linked (system) runtime is required.
+// Set on musl systems (e.g. Alpine, postmarketOS), where the Mozilla runtime cannot run.
+let linkedRuntimeRequired = false
+
 async function checkRuntimeInstallation (versions) {
   document.getElementById('runtime-installation').classList.add('active')
+
+  linkedRuntimeRequired = !!versions.linked_runtime_required
 
   if (!versions.firefox) {
     // Show the runtime installation view
@@ -110,8 +116,14 @@ async function checkRuntimeInstallation (versions) {
       document.getElementById('runtime-needs-7zip').classList.add('d-none')
     }
 
-    // Show the manual installation info if needed
-    if (!await isAutoRuntimeInstallSupported()) {
+    if (linkedRuntimeRequired) {
+      // On musl systems we always link the system Firefox, so show the linked runtime
+      // notice instead of the default auto/manual installation notices
+      document.getElementById('runtime-linked-install').classList.remove('d-none')
+      document.getElementById('runtime-auto-install').classList.add('d-none')
+      document.getElementById('runtime-manual-install').classList.add('d-none')
+    } else if (!await isAutoRuntimeInstallSupported()) {
+      // Show the manual installation info if needed
       document.getElementById('runtime-manual-install').classList.remove('d-none')
       document.getElementById('runtime-auto-install').classList.add('d-none')
       document.getElementById('runtime-install-start').classList.add('d-none')
@@ -132,7 +144,11 @@ document.getElementById('runtime-install-start').onclick = async function () {
 
   try {
     // Start the runtime installation
-    const response = await browser.runtime.sendNativeMessage('firefoxpwa', { cmd: 'InstallRuntime' })
+    // On musl systems, link the system Firefox instead of downloading the Mozilla runtime
+    const message = linkedRuntimeRequired
+      ? { cmd: 'InstallRuntime', params: { link: true } }
+      : { cmd: 'InstallRuntime' }
+    const response = await browser.runtime.sendNativeMessage('firefoxpwa', message)
 
     // Handle native connection errors
     if (response.type === 'Error') throw new Error(response.data)

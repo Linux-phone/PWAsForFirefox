@@ -27,10 +27,23 @@ impl Run for RuntimeInstallCommand {
         let runtime = Runtime::new(&dirs)?;
 
         #[cfg(platform_linux)]
-        if self.link {
-            runtime.link().context("Failed to link runtime")?
-        } else {
-            runtime.install().context("Failed to install runtime")?;
+        {
+            cfg_if! {
+                // On musl systems the downloaded Mozilla runtime cannot run, so always
+                // fall back to linking the system Firefox even without `--link`.
+                if #[cfg(runtime_musl)] {
+                    if !self.link {
+                        log::warn!("Mozilla provides no musl Firefox build; using the system (linked) runtime instead");
+                    }
+                    runtime.link().context("Failed to link runtime")?;
+                } else {
+                    if self.link {
+                        runtime.link().context("Failed to link runtime")?;
+                    } else {
+                        runtime.install().context("Failed to install runtime")?;
+                    }
+                }
+            }
         }
 
         #[cfg(not(platform_linux))]

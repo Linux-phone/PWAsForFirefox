@@ -143,6 +143,32 @@ Can be overwritten by a `FFPWA_USERDATA` build- or run-time environment variable
     also attempt to use the runtime from the system data directory. In this case, you need
     to make sure the directory is writeable by all users to make the patching work.
 
+#### Linked Runtime
+
+On Linux, instead of downloading the Mozilla Firefox runtime, the program can *link* the
+runtime to a Firefox already installed on the system. This is enabled by running
+`firefoxpwa runtime install --link` (or by setting `use_linked_runtime` in the config).
+
+This is required on systems built against **musl libc** (such as Alpine Linux and
+postmarketOS), because Mozilla does not provide a musl Firefox build and the downloaded
+runtime cannot run there. On such systems, `use_linked_runtime` defaults to enabled and
+`firefoxpwa runtime install` automatically links the system Firefox.
+
+The directory of the system Firefox to link against is resolved in the following order:
+
+1. The `linked_runtime_path` config option, or the `FFPWA_LINKED_RUNTIME` environment
+   variable, if set.
+2. Auto-detection by locating `firefox` in the `PATH` and following symlinks to its
+   installation directory (for example, `/usr/bin/firefox` →  `/usr/lib/firefox/`).
+3. The default location `/usr/lib/firefox/`.
+
+!!! note
+
+    On distributions where `/usr/bin/firefox` is a wrapper script rather than a symlink,
+    auto-detection cannot find the installation directory. In that case, set the
+    `FFPWA_LINKED_RUNTIME` environment variable or the `linked_runtime_path` config option
+    to the directory containing the `firefox` binary (e.g. `/usr/lib/firefox/`).
+
 ### Profiles
 
 **Default Location:**

@@ -30,6 +30,13 @@ pub enum ConnectorResponse {
         /// May also be `0.0.0` if 7-Zip was located through
         /// the `PATH` environment variable.
         _7zip: Option<String>,
+
+        /// Whether a linked (system) runtime is required on this system.
+        ///
+        /// Set to `true` on musl-based systems (e.g. Alpine, postmarketOS), where
+        /// Mozilla provides no compatible Firefox build and the downloaded runtime
+        /// cannot run. The extension uses this to install a linked runtime instead.
+        linked_runtime_required: bool,
     },
 
     /// Config of the native program.

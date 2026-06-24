@@ -24,5 +24,10 @@ fn main() {
         platform_linux: { target_os = "linux" },
         platform_macos: { target_os = "macos" },
         platform_bsd: { any(target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd") },
+
+        // Linux distributions built against musl libc (e.g. Alpine, postmarketOS).
+        // Mozilla does not provide a musl Firefox build, so the downloaded runtime cannot
+        // run on these systems and a linked (system) runtime must be used instead.
+        runtime_musl: { all(target_os = "linux", target_env = "musl") },
     }
 }

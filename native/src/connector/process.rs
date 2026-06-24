@@ -61,6 +61,7 @@ impl Process for GetSystemVersions {
                     }
                 }
             },
+            linked_runtime_required: cfg!(runtime_musl),
         })
     }
 }
