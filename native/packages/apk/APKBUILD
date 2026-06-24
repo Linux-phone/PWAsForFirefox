@@ -1,0 +1,93 @@
+# Contributor: PWAsForFirefox contributors
+# Maintainer: PWAsForFirefox contributors
+#
+# Local / fork build:
+# This APKBUILD builds from a local source tarball instead of a published release,
+# which is convenient while developing a fork. Generate the tarball from the repo
+# root (so its contents match your working tree) and build with abuild:
+#
+#   # From the repository root:
+#   git archive --prefix=firefoxpwa-$pkgver/ \
+#     -o native/packages/apk/firefoxpwa-$pkgver.tar.gz HEAD
+#
+#   # Then, in this directory (-F allows building outside an aports checkout):
+#   cd native/packages/apk
+#   abuild -F -r
+#
+# To include uncommitted changes, either commit them first or replace the
+# `git archive` command with a `tar` of your working tree using the same prefix.
+#
+pkgname=firefoxpwa
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="A tool to install, manage and use PWAs in Mozilla Firefox (native component)"
+url="https://pwasforfirefox.filips.si/"
+# Alpine/postmarketOS use musl, so the downloaded Mozilla runtime cannot run.
+# The native program detects musl and uses a linked (system) runtime instead,
+# which requires a system Firefox to be installed (hence the `firefox` dependency).
+arch="aarch64 x86_64"
+license="MPL-2.0"
+depends="firefox"
+makedepends="cargo cargo-auditable openssl-dev xz-dev zstd-dev"
+subpackages="$pkgname-doc $pkgname-bash-completion $pkgname-fish-completion $pkgname-zsh-completion"
+# Local source tarball, produced with `git archive` (see the header comment above).
+source="$pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver/native"
+options="net" # cargo fetches dependencies during build
+
+export OPENSSL_NO_VENDOR=1
+export ZSTD_SYS_USE_PKG_CONFIG=1
+
+prepare() {
+	default_prepare
+
+	# Set version in source files as per build instructions
+	sed -i "s/version = \"0.0.0\"/version = \"$pkgver\"/g" Cargo.toml
+	sed -i "s/DISTRIBUTION_VERSION = '0.0.0'/DISTRIBUTION_VERSION = '$pkgver'/g" \
+		userchrome/profile/chrome/pwa/chrome.sys.mjs
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --release --frozen
+}
+
+package() {
+	# Executables
+	install -Dm755 target/release/firefoxpwa "$pkgdir"/usr/bin/firefoxpwa
+	install -Dm755 target/release/firefoxpwa-connector "$pkgdir"/usr/libexec/firefoxpwa-connector
+
+	# Native messaging manifest
+	install -Dm644 manifests/linux.json \
+		"$pkgdir"/usr/lib/mozilla/native-messaging-hosts/firefoxpwa.json
+
+	# UserChrome modifications
+	mkdir -p "$pkgdir"/usr/share/firefoxpwa/userchrome
+	cp -r userchrome/* "$pkgdir"/usr/share/firefoxpwa/userchrome/
+
+	# Shell completions
+	install -Dm644 target/release/completions/firefoxpwa.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/firefoxpwa
+	install -Dm644 target/release/completions/firefoxpwa.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/firefoxpwa.fish
+	install -Dm644 target/release/completions/_firefoxpwa \
+		"$pkgdir"/usr/share/zsh/site-functions/_firefoxpwa
+
+	# AppStream metadata and icon
+	install -Dm644 packages/appstream/si.filips.FirefoxPWA.metainfo.xml \
+		"$pkgdir"/usr/share/metainfo/si.filips.FirefoxPWA.metainfo.xml
+	install -Dm644 packages/appstream/si.filips.FirefoxPWA.svg \
+		"$pkgdir"/usr/share/icons/hicolor/scalable/apps/si.filips.FirefoxPWA.svg
+
+	# Documentation
+	install -Dm644 README.md "$pkgdir"/usr/share/doc/$pkgname/README-NATIVE.md
+}
+
+# The source tarball is generated locally and changes on every build, so its
+# checksum is skipped. Run `abuild checksum` if you switch to a fixed release.
+sha512sums="SKIP  $pkgname-$pkgver.tar.gz"

@@ -52,7 +52,18 @@ pub struct Config {
     #[cfg(platform_linux)]
     /// Experimental: Using the system runtime to save some disk space.
     /// This might not work on your system.
+    ///
+    /// Defaults to enabled on musl targets (e.g. Alpine, postmarketOS), where Mozilla
+    /// provides no compatible Firefox build and the downloaded runtime cannot run.
+    #[default(cfg!(runtime_musl))]
     pub use_linked_runtime: bool,
+
+    #[cfg(platform_linux)]
+    /// Optional explicit path to the system Firefox installation directory used for the
+    /// linked runtime. Overrides auto-detection.
+    ///
+    /// May also be set with the `FFPWA_LINKED_RUNTIME` environment variable.
+    pub linked_runtime_path: Option<String>,
 }
 
 #[non_exhaustive]

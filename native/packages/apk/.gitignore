@@ -1,0 +1,6 @@
+# Locally generated source tarball (see APKBUILD header)
+*.tar.gz
+
+# abuild build artifacts
+pkg/
+src/

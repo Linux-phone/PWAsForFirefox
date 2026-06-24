@@ -278,6 +278,10 @@
     "message": "This extension also needs a separate Mozilla Firefox runtime where all your Progressive Web App sites will run. However, your platform currently does not support automatic installation of the runtime. Please follow the advanced options below to install it manually.",
     "description": "The runtime installation notice on the setup page, displayed on platforms where auto installation is not supported"
   },
+  "setupPageRuntimeInstallationLinked": {
+    "message": "This extension also needs a separate Firefox runtime where all your Progressive Web App sites will run. Your system uses musl libc (e.g. Alpine or postmarketOS), where the Mozilla runtime cannot run, so pressing the button below will instead set up a runtime linked to the Firefox already installed on your system. Make sure Firefox is installed.",
+    "description": "The runtime installation notice on the setup page, displayed on musl systems where a linked runtime is required"
+  },
   "setupPageRuntimeInstallation7Zip": {
     "message": "To install the runtime, you will need <a href=\"https://7-zip.org/\" target=\"_blank\">7-Zip</a> installed. Installing the runtime will automatically trigger the 7-Zip installer if needed. This may require accepting User Account Control prompt. You can also manually install 7-Zip or use your existing 7-zip installation. After the runtime is installed, you can delete 7-Zip manually.",
     "description": "The runtime installation notice on the setup page, displayed when 7-Zip needs to be installed"

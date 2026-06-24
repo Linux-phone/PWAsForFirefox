@@ -49,23 +49,39 @@ impl Run for SiteLaunchCommand {
         #[cfg(all(platform_linux, not(feature = "immutable-runtime")))]
         {
             use std::fs::File;
-            use std::io::Read;
+            use std::io::{Read, Result as IoResult};
             use std::path::Path;
 
             use blake3::{Hash, hash};
 
-            fn hasher<P: AsRef<Path>>(path: P) -> Hash {
-                let mut file = File::open(path.as_ref().join("firefox")).unwrap();
-                let mut buf = Vec::new();
-                let _ = file.read_to_end(&mut buf);
+            use crate::components::runtime::resolve_system_runtime_dir;
 
-                hash(&buf)
+            fn hasher<P: AsRef<Path>>(path: P) -> IoResult<Hash> {
+                let mut file = File::open(path.as_ref().join("firefox"))?;
+                let mut buf = Vec::new();
+                file.read_to_end(&mut buf)?;
+
+                Ok(hash(&buf))
             }
 
-            if storage.config.use_linked_runtime
-                && hasher(crate::components::runtime::FFOX) != hasher(&runtime.directory)
-            {
-                runtime.link()?;
+            // If the linked runtime is enabled, re-link it whenever the system Firefox has
+            // changed (e.g. after a system update). Any failure here (missing or moved
+            // system Firefox) is non-fatal: we simply keep using the existing linked copy.
+            if storage.config.use_linked_runtime {
+                if let Some(system_dir) = resolve_system_runtime_dir(&storage.config) {
+                    match (hasher(&system_dir), hasher(&runtime.directory)) {
+                        (Ok(system), Ok(linked)) if system != linked => runtime.link()?,
+                        (Err(error), _) | (_, Err(error)) => {
+                            warn!("Skipping linked runtime update check: {error}")
+                        }
+                        _ => {}
+                    }
+                } else {
+                    warn!(
+                        "Linked runtime is enabled but no system Firefox was found; \
+                         skipping the update check"
+                    );
+                }
             }
         }
 
