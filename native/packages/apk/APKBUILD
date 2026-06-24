@@ -18,7 +18,10 @@
 # `git archive` command with a `tar` of your working tree using the same prefix.
 #
 pkgname=firefoxpwa
-pkgver=0.1.0
+# Keep the major version aligned with the browser extension you use (the extension
+# refuses to talk to a native program with a different major version). The official
+# AMO extension is currently 2.x.
+pkgver=2.18.2
 pkgrel=0
 pkgdesc="A tool to install, manage and use PWAs in Mozilla Firefox (native component)"
 url="https://pwasforfirefox.filips.si/"
