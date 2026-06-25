@@ -52,19 +52,47 @@ function readConfig () {
  *
  * @returns {ChromeWindow&Window} - The new window.
  */
+// Background notifications (systemd service mode):
+// `FFPWA_BACKGROUND=1` is set by the background systemd service. In this mode the initial
+// (startup) window is hidden so the process stays alive for Web Push without surfacing a
+// window, and a later launch (e.g. tapping the app icon) reveals it.
+function isBackgroundMode () {
+  try {
+    return Cc['@mozilla.org/process/environment;1']
+      .getService(Ci.nsIEnvironment)
+      .get('FFPWA_BACKGROUND') === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+// Show or hide a browser window without closing it (keeps the process alive).
+function setWindowHidden (win, hidden) {
+  try {
+    win.docShell.treeOwner
+      .QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsIBaseWindow).visibility = !hidden;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// Hide a freshly opened startup window. The native window may not be realized yet and
+// can be re-shown while its chrome loads, so we hide it now and again on `load`.
+function hideStartupWindow (win) {
+  const hide = () => { if (!setWindowHidden(win, true)) { try { win.minimize(); } catch (_) {} } };
+  hide();
+  try { win.addEventListener('load', hide, { once: true }); } catch (_) {}
+}
+
 function launchSite (siteConfig, urlList, isStartup) {
-  // VALIDATION PATCH (background notifications, option A):
-  // When background mode is enabled, an existing instance of this web app may be
-  // running with its window hidden (kept alive for Web Push). Reveal and focus that
-  // window instead of opening a new one.
-  if (Services.prefs.getBoolPref('firefoxpwa.keepRunningInBackground', false)) {
+  // Background mode: an existing instance of this web app may be running with its window
+  // hidden (kept alive for Web Push). Reveal and focus that window instead of opening a new one.
+  if (isBackgroundMode()) {
     for (const win of Services.wm.getEnumerator('navigator:browser')) {
       if (win.gFFPWASiteConfig?.ulid === siteConfig.ulid) {
-        try {
-          win.docShell.treeOwner
-            .QueryInterface(Ci.nsIInterfaceRequestor)
-            .getInterface(Ci.nsIBaseWindow).visibility = true;
-        } catch (_) {}
+        setWindowHidden(win, false);
         if (win.windowState === win.STATE_MINIMIZED) win.restore?.();
         win.focus();
         return win;
@@ -125,6 +153,7 @@ function launchSite (siteConfig, urlList, isStartup) {
 
       ChromeUtils.addProfilerMarker('earlyBlankWindowVisible', openTime);
       BrowserWindowTracker.registerOpeningWindow(win, false);
+      if (isBackgroundMode()) hideStartupWindow(win);
       return win;
     }
   }
@@ -137,6 +166,9 @@ function launchSite (siteConfig, urlList, isStartup) {
   // Apply the system integration and set the site config
   applySystemIntegration(win, siteConfig);
   win.gFFPWASiteConfig = siteConfig;
+
+  // In background mode, the initial service launch should stay hidden
+  if (isBackgroundMode() && isStartup) hideStartupWindow(win);
 
   return win;
 }
