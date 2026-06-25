@@ -326,6 +326,116 @@ fn remove_startup_entry(classid: &str, config: &Path) {
     let _ = remove_file(filename);
 }
 
+/// Locate a KDE config tool, preferring the Plasma 6 binary and falling back to Plasma 5.
+fn kde_config_tool(name: &str) -> Option<String> {
+    for suffix in ["6", "5"] {
+        let binary = format!("{name}{suffix}");
+        if Command::new(&binary).arg("--version").output().is_ok() {
+            return Some(binary);
+        }
+    }
+    None
+}
+
+/// Configure (or remove) the KWin window rule that makes the web app window open minimized,
+/// so the background service can keep the web app running without surfacing its window.
+///
+/// This is best-effort and only takes effect on KDE Plasma; it is silently skipped elsewhere.
+fn configure_kwin_rule(enabled: bool, classid: &str, ulid: &str) {
+    let kwriteconfig = match kde_config_tool("kwriteconfig") {
+        Some(binary) => binary,
+        None => return,
+    };
+    let group = format!("ffpwa-{ulid}");
+
+    if enabled {
+        let write_key = |key: &str, value: &str| {
+            let _ = Command::new(&kwriteconfig)
+                .args(["--file", "kwinrulesrc", "--group", &group, "--key", key, value])
+                .output();
+        };
+        write_key("Description", &format!("PWAsForFirefox background app {ulid}"));
+        write_key("wmclass", classid);
+        write_key("wmclassmatch", "1");
+        write_key("minimize", "true");
+        write_key("minimizerule", "3"); // 3 = Apply Initially
+    }
+
+    // Update the list of active rules in the General group, keeping any existing user rules
+    let current = kde_config_tool("kreadconfig")
+        .and_then(|kreadconfig| {
+            Command::new(kreadconfig)
+                .args(["--file", "kwinrulesrc", "--group", "General", "--key", "rules"])
+                .output()
+                .ok()
+        })
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    let mut rules: Vec<String> =
+        current.split(',').map(str::trim).filter(|rule| !rule.is_empty()).map(String::from).collect();
+    rules.retain(|rule| rule != &group);
+    if enabled {
+        rules.push(group);
+    }
+
+    let _ = Command::new(&kwriteconfig)
+        .args(["--file", "kwinrulesrc", "--group", "General", "--key", "rules", &rules.join(",")])
+        .output();
+    let _ = Command::new(&kwriteconfig)
+        .args(["--file", "kwinrulesrc", "--group", "General", "--key", "count", &rules.len().to_string()])
+        .output();
+
+    // Ask KWin to reload its configuration so the rule applies immediately
+    for qdbus in ["qdbus6", "qdbus"] {
+        if Command::new(qdbus).args(["org.kde.KWin", "/KWin", "reconfigure"]).output().is_ok() {
+            break;
+        }
+    }
+}
+
+/// Configure (or remove) the systemd user service and KWin rule that keep the web app
+/// running in the background for notifications. Best-effort: failures are logged, not fatal.
+fn configure_background_service(enabled: bool, ids: &SiteIds, exe: &str, config: &Path) {
+    let service = format!("firefoxpwa-app@{}.service", ids.ulid);
+    let systemctl = |args: &[&str]| {
+        let _ = Command::new("systemctl").arg("--user").args(args).output();
+    };
+
+    if enabled {
+        // Write the shared service template; the systemd instance name (`%i`) is the web app ULID
+        let unit_directory = config.join("systemd/user");
+        let unit = format!(
+            "[Unit]\n\
+            Description=PWAsForFirefox web app %i (background)\n\
+            PartOf=graphical-session.target\n\
+            After=graphical-session.target\n\
+            \n\
+            [Service]\n\
+            Environment=FFPWA_BACKGROUND=1\n\
+            ExecStart={exe} site launch --foreground %i\n\
+            Restart=always\n\
+            RestartSec=2\n\
+            \n\
+            [Install]\n\
+            WantedBy=graphical-session.target\n"
+        );
+
+        if let Err(error) = create_dir_all(&unit_directory)
+            .and_then(|_| write(unit_directory.join("firefoxpwa-app@.service"), unit))
+        {
+            warn!("Failed to write the background service unit: {error}");
+        }
+
+        systemctl(&["daemon-reload"]);
+        systemctl(&["enable", "--now", &service]);
+    } else {
+        systemctl(&["disable", "--now", &service]);
+    }
+
+    configure_kwin_rule(enabled, &ids.classid, &ids.ulid);
+}
+
 //////////////////////////////
 // Interface
 //////////////////////////////
@@ -346,6 +456,7 @@ pub fn install(args: &IntegrationInstallArgs) -> Result<()> {
 
     create_desktop_entry(args, &ids, &exe, &data).context("Failed to create application entry")?;
     create_startup_entry(args, &ids, &data, &config).context("Failed to create startup entry")?;
+    configure_background_service(args.site.config.background_notifications, &ids, &exe, &config);
     update_application_cache(&data);
 
     Ok(())
@@ -362,6 +473,7 @@ pub fn uninstall(args: &IntegrationUninstallArgs) -> Result<()> {
     remove_icons(&ids.classid, data);
     remove_desktop_entry(&ids.classid, data);
     remove_startup_entry(&ids.classid, config);
+    configure_background_service(false, &ids, "", config);
     update_application_cache(data);
 
     Ok(())

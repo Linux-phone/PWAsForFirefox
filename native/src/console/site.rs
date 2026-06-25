@@ -209,6 +209,7 @@ impl SiteInstallCommand {
             custom_protocol_handlers: vec![],
             launch_on_login: self.launch_on_login.unwrap_or(false),
             launch_on_browser: self.launch_on_browser.unwrap_or(false),
+            background_notifications: self.background_notifications.unwrap_or(false),
         };
 
         let client = construct_certificates_and_client(
@@ -325,6 +326,7 @@ impl Run for SiteUpdateCommand {
         store_value!(site.config.enabled_protocol_handlers, self.enabled_protocol_handlers);
         store_value!(site.config.launch_on_login, self.launch_on_login);
         store_value!(site.config.launch_on_browser, self.launch_on_browser);
+        store_value!(site.config.background_notifications, self.background_notifications);
 
         let client = construct_certificates_and_client(
             self.client.user_agent.as_deref(),
