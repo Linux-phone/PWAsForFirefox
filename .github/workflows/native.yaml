@@ -982,15 +982,26 @@ jobs:
 
           # Configure abuild with the persistent signing key and a local repo dest
           mkdir -p ~/.abuild
-          printf '%s' "$ABUILD_PRIVKEY" > ~/.abuild/"$ABUILD_KEY_NAME"
+          # Trailing newline so the PEM is well-formed even if the secret lost one
+          printf '%s\n' "$ABUILD_PRIVKEY" > ~/.abuild/"$ABUILD_KEY_NAME"
           chmod 600 ~/.abuild/"$ABUILD_KEY_NAME"
-          openssl rsa -in ~/.abuild/"$ABUILD_KEY_NAME" -pubout \
-            -out ~/.abuild/"$ABUILD_KEY_NAME".pub
+
+          # Fail early with a clear message if the secret is not an unencrypted
+          # private key (e.g. the public key was stored, or it was corrupted on
+          # paste). abuild signs with the same key, so this must be valid.
+          if ! openssl pkey -in ~/.abuild/"$ABUILD_KEY_NAME" -pubout \
+              -out ~/.abuild/"$ABUILD_KEY_NAME".pub 2>/dev/null; then
+            echo "::error::ABUILD_PRIVKEY is not a readable unencrypted private key." \
+              "Store the *private* key (.rsa, '-----BEGIN PRIVATE KEY-----'), e.g.:" \
+              "gh secret set ABUILD_PRIVKEY < ~/.abuild/$ABUILD_KEY_NAME"
+            exit 1
+          fi
           echo "PACKAGER_PRIVKEY=\"$HOME/.abuild/$ABUILD_KEY_NAME\"" >> ~/.abuild/abuild.conf
           echo "REPODEST=\"$HOME/packages\"" >> ~/.abuild/abuild.conf
 
           # Trust our own key so abuild can sign and index the repository
-          cp ~/.abuild/"$ABUILD_KEY_NAME".pub /etc/apk/keys/
+          # (alpine.sh runs as a non-root user with passwordless sudo)
+          sudo cp ~/.abuild/"$ABUILD_KEY_NAME".pub /etc/apk/keys/
 
           # Build, sign and index the package (-F forces running as root)
           cd native/packages/apk
