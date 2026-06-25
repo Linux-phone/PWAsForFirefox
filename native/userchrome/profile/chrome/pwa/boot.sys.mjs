@@ -78,10 +78,13 @@ function setWindowHidden (win, hidden) {
   }
 }
 
-// Hide a freshly opened startup window. The native window may not be realized yet and
-// can be re-shown while its chrome loads, so we hide it now and again on `load`.
+// Send a freshly opened startup window to the background. We *minimize* rather than fully
+// hide it: a fully hidden (unmapped) window has its content throttled by Firefox, which
+// stops the service worker and Web Push from running. A minimized window stays mapped, so
+// the page and its push subscription keep working while staying out of the foreground.
+// The window may be re-shown while its chrome loads, so we minimize now and again on `load`.
 function hideStartupWindow (win) {
-  const hide = () => { if (!setWindowHidden(win, true)) { try { win.minimize(); } catch (_) {} } };
+  const hide = () => { try { win.minimize(); } catch (_) {} };
   hide();
   try { win.addEventListener('load', hide, { once: true }); } catch (_) {}
 }
