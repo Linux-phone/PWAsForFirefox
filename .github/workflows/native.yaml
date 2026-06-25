@@ -956,6 +956,10 @@ jobs:
           # Pin the package version to the release tag and create the source tarball
           # the APKBUILD expects (same layout as the documented local build)
           sed -i "s/^pkgver=.*/pkgver=$VERSION/" APKBUILD
+          # Skip check() in CI: it runs the full test suite (already covered by the
+          # clippy/build jobs) and would pull the runtime-only `firefox` dependency
+          # into the build chroot. The dependency stays in the final package.
+          sed -i 's/^options="net"/options="net !check"/' APKBUILD
           git -C "$GITHUB_WORKSPACE" archive --prefix="firefoxpwa-$VERSION/" \
             -o "$PWD/firefoxpwa-$VERSION.tar.gz" HEAD
 
