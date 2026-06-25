@@ -1040,10 +1040,13 @@ jobs:
           abuild checksum
           abuild -F -d
 
-          # Stage the signed repository and public key for publishing. The workspace
+          # Stage the signed repository and public key for publishing. abuild names
+          # the repo dir after the APKBUILD's parent folder, so locate the aarch64
+          # dir dynamically and publish it under a stable `apk/` path. The workspace
           # is bind-mounted into the chroot, so these land on the host runner.
-          mkdir -p "$GITHUB_WORKSPACE/site"
-          cp -r ~/packages/apk "$GITHUB_WORKSPACE/site/"
+          archdir=$(find ~/packages -type d -name aarch64 | head -n1)
+          mkdir -p "$GITHUB_WORKSPACE/site/apk"
+          cp -r "$archdir" "$GITHUB_WORKSPACE/site/apk/"
           cp ~/.abuild/"$ABUILD_KEY_NAME".pub "$GITHUB_WORKSPACE/site/"
 
       - name: Upload APK repository
