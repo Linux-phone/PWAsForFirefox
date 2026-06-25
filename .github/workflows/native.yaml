@@ -13,6 +13,12 @@ on:
     paths:
       - .github/workflows/native.yaml
       - native/**
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to stamp on a manual APK test build (no tag needed)
+        default: 0.0.0
+        required: false
 
 defaults:
   run:
@@ -115,6 +121,8 @@ jobs:
 
   build:
     name: Build (${{ matrix.target }}, ${{ matrix.portable && 'portable' || 'normal' }})
+    # Skip the cross-compile matrix on manual dispatch, which only tests the APK build
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
 
     permissions:
@@ -913,7 +921,7 @@ jobs:
 
   build-apk:
     name: Build APK (aarch64)
-    if: startsWith(github.ref, 'refs/tags/v') && vars.ABUILD_KEY_NAME != ''
+    if: (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && vars.ABUILD_KEY_NAME != ''
     runs-on: ubuntu-24.04-arm
 
     permissions:
@@ -935,7 +943,12 @@ jobs:
           persist-credentials: false
 
       - name: Set the version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+          fi
 
       - name: Generate the source tarball
         working-directory: native/packages/apk
