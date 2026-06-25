@@ -998,14 +998,14 @@ jobs:
           fi
           echo "PACKAGER_PRIVKEY=\"$HOME/.abuild/$ABUILD_KEY_NAME\"" >> ~/.abuild/abuild.conf
           echo "REPODEST=\"$HOME/packages\"" >> ~/.abuild/abuild.conf
+          # User-writable source cache so abuild never needs root
+          echo "SRCDEST=\"$HOME/.abuild/srcdest\"" >> ~/.abuild/abuild.conf
 
-          # Trust our own key so abuild can sign and index the repository
-          # (alpine.sh runs as a non-root user with passwordless sudo)
-          sudo cp ~/.abuild/"$ABUILD_KEY_NAME".pub /etc/apk/keys/
-
-          # Build, sign and index the package (-F forces running as root)
+          # Build, sign and index the package. Run as the non-root chroot user:
+          # makedepends are already installed (setup-alpine), so no -r/apk/sudo is
+          # needed, and abuild signs the index with PACKAGER_PRIVKEY directly.
           cd native/packages/apk
-          abuild -F -r
+          abuild -F
 
           # Stage the signed repository and public key for publishing. The workspace
           # is bind-mounted into the chroot, so these land on the host runner.
