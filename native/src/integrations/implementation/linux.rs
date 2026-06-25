@@ -372,8 +372,12 @@ fn configure_kwin_rule(enabled: bool, classid: &str, ulid: &str) {
         .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
         .unwrap_or_default();
 
-    let mut rules: Vec<String> =
-        current.split(',').map(str::trim).filter(|rule| !rule.is_empty()).map(String::from).collect();
+    let mut rules: Vec<String> = current
+        .split(',')
+        .map(str::trim)
+        .filter(|rule| !rule.is_empty())
+        .map(String::from)
+        .collect();
     rules.retain(|rule| rule != &group);
     if enabled {
         rules.push(group);
@@ -383,7 +387,15 @@ fn configure_kwin_rule(enabled: bool, classid: &str, ulid: &str) {
         .args(["--file", "kwinrulesrc", "--group", "General", "--key", "rules", &rules.join(",")])
         .output();
     let _ = Command::new(&kwriteconfig)
-        .args(["--file", "kwinrulesrc", "--group", "General", "--key", "count", &rules.len().to_string()])
+        .args([
+            "--file",
+            "kwinrulesrc",
+            "--group",
+            "General",
+            "--key",
+            "count",
+            &rules.len().to_string(),
+        ])
         .output();
 
     // Ask KWin to reload its configuration so the rule applies immediately
