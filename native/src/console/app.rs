@@ -54,6 +54,11 @@ pub struct SiteLaunchCommand {
     #[clap(long, conflicts_with = "url", value_hint = clap::ValueHint::Url)]
     pub protocol: Option<Option<Url>>,
 
+    /// Run in the foreground and wait for the web app to exit
+    /// {n}Useful for running a web app as a service (e.g. for background notifications)
+    #[clap(long)]
+    pub foreground: bool,
+
     /// Internal: Directly launch web app without system integration
     #[cfg(target_os = "macos")]
     #[clap(long, hide = true)]

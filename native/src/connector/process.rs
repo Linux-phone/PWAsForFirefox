@@ -120,6 +120,7 @@ impl Process for LaunchSite {
             url: self.url.to_owned(),
             protocol: None,
             arguments: vec![],
+            foreground: false,
             #[cfg(platform_macos)]
             direct_launch: false,
         };
