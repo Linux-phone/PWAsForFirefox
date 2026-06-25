@@ -13,6 +13,12 @@ on:
     paths:
       - .github/workflows/native.yaml
       - native/**
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to stamp on a manual APK test build (no tag needed)
+        default: 0.0.0
+        required: false
 
 defaults:
   run:
@@ -115,6 +121,8 @@ jobs:
 
   build:
     name: Build (${{ matrix.target }}, ${{ matrix.portable && 'portable' || 'normal' }})
+    # Skip the cross-compile matrix on manual dispatch, which only tests the APK build
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
 
     permissions:
@@ -913,7 +921,7 @@ jobs:
 
   build-apk:
     name: Build APK (aarch64)
-    if: startsWith(github.ref, 'refs/tags/v') && vars.ABUILD_KEY_NAME != ''
+    if: (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && vars.ABUILD_KEY_NAME != ''
     runs-on: ubuntu-24.04-arm
 
     permissions:
@@ -935,7 +943,12 @@ jobs:
           persist-credentials: false
 
       - name: Set the version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+          fi
 
       - name: Generate the source tarball
         working-directory: native/packages/apk
@@ -952,6 +965,9 @@ jobs:
           # Match the runner's native arch; the action defaults to x86_64, which
           # would force slow (and here broken) QEMU emulation on the arm64 runner
           arch: aarch64
+          # The apk-tools-url default is the x86_64 apk.static, which cannot run
+          # on the arm64 runner; point it at the aarch64 build instead
+          apk-tools-url: https://gitlab.alpinelinux.org/api/v4/projects/5/packages/generic/v2.14.10/aarch64/apk.static#!sha256!e471d35aa221d031abe9b6288aede12a8e9f1a398954e5a2e1d1bce1727b4ef4
           branch: latest-stable
           packages: >
             alpine-sdk cargo cargo-auditable openssl-dev xz-dev zstd-dev
