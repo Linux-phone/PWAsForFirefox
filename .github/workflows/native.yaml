@@ -1006,10 +1006,12 @@ jobs:
           echo "SRCDEST=\"$HOME/.abuild/srcdest\"" >> ~/.abuild/abuild.conf
 
           # Build, sign and index the package. Run as the non-root chroot user:
-          # makedepends are already installed (setup-alpine), so no -r/apk/sudo is
-          # needed, and abuild signs the index with PACKAGER_PRIVKEY directly.
+          # makedepends are already installed (setup-alpine), so -d disables abuild's
+          # dependency handling (which would otherwise demand the runtime-only
+          # `firefox` depend and need root to install it). abuild signs the index
+          # with PACKAGER_PRIVKEY directly.
           cd native/packages/apk
-          abuild -F
+          abuild -F -d
 
           # Stage the signed repository and public key for publishing. The workspace
           # is bind-mounted into the chroot, so these land on the host runner.
