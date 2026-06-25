@@ -1000,7 +1000,8 @@ jobs:
           echo "REPODEST=\"$HOME/packages\"" >> ~/.abuild/abuild.conf
 
           # Trust our own key so abuild can sign and index the repository
-          cp ~/.abuild/"$ABUILD_KEY_NAME".pub /etc/apk/keys/
+          # (alpine.sh runs as a non-root user with passwordless sudo)
+          sudo cp ~/.abuild/"$ABUILD_KEY_NAME".pub /etc/apk/keys/
 
           # Build, sign and index the package (-F forces running as root)
           cd native/packages/apk
