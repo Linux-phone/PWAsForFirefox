@@ -1011,6 +1011,10 @@ jobs:
           # `firefox` depend and need root to install it). abuild signs the index
           # with PACKAGER_PRIVKEY directly.
           cd native/packages/apk
+          # The committed APKBUILD uses SKIP (the local tarball changes every build);
+          # regenerate a real checksum for the freshly created CI tarball so abuild's
+          # verification passes
+          abuild checksum
           abuild -F -d
 
           # Stage the signed repository and public key for publishing. The workspace
