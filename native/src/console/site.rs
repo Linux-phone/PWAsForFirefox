@@ -156,7 +156,8 @@ impl Run for SiteLaunchCommand {
         };
 
         info!("Launching the web app");
-        let mut child = site.launch(&dirs, &runtime, &storage.config, &url, args, storage.variables)?;
+        let mut child =
+            site.launch(&dirs, &runtime, &storage.config, &url, args, storage.variables)?;
 
         // Wait for the web app to exit when running in the foreground. On macOS this is always
         // required so the launcher process stays alive. The `--foreground` flag enables it on

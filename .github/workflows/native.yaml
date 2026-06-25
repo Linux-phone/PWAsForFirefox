@@ -910,3 +910,153 @@ jobs:
 
       - name: Release Chocolatey package
         run: choco push native/packages/choco/*.nupkg --source https://push.chocolatey.org/ --key ${{secrets.CHOCO_TOKEN}}
+
+  build-apk:
+    name: Build APK (aarch64)
+    if: startsWith(github.ref, 'refs/tags/v') && vars.ABUILD_KEY_NAME != ''
+    runs-on: ubuntu-24.04-arm
+
+    permissions:
+      contents: read
+
+    needs:
+      - clippy
+      - rustfmt
+
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set the version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
+      - name: Generate the source tarball
+        working-directory: native/packages/apk
+        run: |
+          # Pin the package version to the release tag and create the source tarball
+          # the APKBUILD expects (same layout as the documented local build)
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" APKBUILD
+          git -C "$GITHUB_WORKSPACE" archive --prefix="firefoxpwa-$VERSION/" \
+            -o "$PWD/firefoxpwa-$VERSION.tar.gz" HEAD
+
+      - name: Set up Alpine
+        uses: jirutka/setup-alpine@ae3b3ddba35054804fc4a3507b519fa7e8152050 # v1.4.1
+        with:
+          branch: latest-stable
+          packages: >
+            alpine-sdk cargo cargo-auditable openssl-dev xz-dev zstd-dev
+
+      - name: Build and sign the APK
+        shell: alpine.sh {0}
+        env:
+          ABUILD_PRIVKEY: ${{ secrets.ABUILD_PRIVKEY }}
+          ABUILD_KEY_NAME: ${{ vars.ABUILD_KEY_NAME }}
+        run: |
+          set -eu
+
+          # Configure abuild with the persistent signing key and a local repo dest
+          mkdir -p ~/.abuild
+          printf '%s' "$ABUILD_PRIVKEY" > ~/.abuild/"$ABUILD_KEY_NAME"
+          chmod 600 ~/.abuild/"$ABUILD_KEY_NAME"
+          openssl rsa -in ~/.abuild/"$ABUILD_KEY_NAME" -pubout \
+            -out ~/.abuild/"$ABUILD_KEY_NAME".pub
+          echo "PACKAGER_PRIVKEY=\"$HOME/.abuild/$ABUILD_KEY_NAME\"" >> ~/.abuild/abuild.conf
+          echo "REPODEST=\"$HOME/packages\"" >> ~/.abuild/abuild.conf
+
+          # Trust our own key so abuild can sign and index the repository
+          cp ~/.abuild/"$ABUILD_KEY_NAME".pub /etc/apk/keys/
+
+          # Build, sign and index the package (-F forces running as root)
+          cd native/packages/apk
+          abuild -F -r
+
+          # Stage the signed repository and public key for publishing. The workspace
+          # is bind-mounted into the chroot, so these land on the host runner.
+          mkdir -p "$GITHUB_WORKSPACE/site"
+          cp -r ~/packages/apk "$GITHUB_WORKSPACE/site/"
+          cp ~/.abuild/"$ABUILD_KEY_NAME".pub "$GITHUB_WORKSPACE/site/"
+
+      - name: Upload APK repository
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: apk-repo
+          path: site
+          compression-level: 0
+
+  release-apk:
+    name: Release APK repository
+    if: startsWith(github.ref, 'refs/tags/v') && vars.ABUILD_KEY_NAME != ''
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    needs:
+      - build-apk
+
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Download APK repository
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: apk-repo
+          path: site
+
+      - name: Attach packages to GitHub Release
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
+        with:
+          fail_on_unmatched_files: true
+          files: site/apk/aarch64/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Generate the repository index page
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
+          KEY_NAME: ${{ vars.ABUILD_KEY_NAME }}
+        run: |
+          cat > site/index.html <<EOF
+          <!DOCTYPE html>
+          <html lang="en">
+          <head><meta charset="utf-8"><title>FirefoxPWA APK repository</title></head>
+          <body>
+          <h1>FirefoxPWA APK repository</h1>
+          <p>Signed Alpine / postmarketOS repository (aarch64).</p>
+          <pre>
+          wget $BASE_URL/$KEY_NAME.pub -O /etc/apk/keys/$KEY_NAME.pub
+          echo "$BASE_URL/apk" | tee -a /etc/apk/repositories
+          apk update &amp;&amp; apk add firefoxpwa
+          </pre>
+          </body>
+          </html>
+          EOF
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
