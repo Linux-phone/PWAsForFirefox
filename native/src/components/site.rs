@@ -91,6 +91,14 @@ pub struct SiteConfig {
     /// Whether the web app should be launched on the browser launch.
     #[serde(default)]
     pub launch_on_browser: bool,
+
+    /// Whether the web app should keep running in the background to receive
+    /// notifications while its window is closed.
+    ///
+    /// On Linux this is implemented with a systemd user service. Only affects
+    /// platforms where background running is supported.
+    #[serde(default)]
+    pub background_notifications: bool,
 }
 
 #[non_exhaustive]

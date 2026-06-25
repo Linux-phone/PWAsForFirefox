@@ -113,6 +113,10 @@ pub struct SiteInstallCommand {
     #[clap(long)]
     pub launch_on_browser: Option<bool>,
 
+    /// Keep the web app running in the background for notifications (Linux)
+    #[clap(long)]
+    pub background_notifications: Option<bool>,
+
     /// Launch this web app when the installation finishes
     #[clap(long)]
     pub launch_now: bool,
@@ -184,6 +188,10 @@ pub struct SiteUpdateCommand {
     /// Set the web app to launch on the browser launch.
     #[clap(long)]
     pub launch_on_browser: Option<bool>,
+
+    /// Keep the web app running in the background for notifications (Linux).
+    #[clap(long)]
+    pub background_notifications: Option<bool>,
 
     /// Disable manifest updates
     #[clap(long = "no-manifest-updates", action = ArgAction::SetFalse)]
