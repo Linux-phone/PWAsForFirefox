@@ -949,6 +949,9 @@ jobs:
       - name: Set up Alpine
         uses: jirutka/setup-alpine@ae3b3ddba35054804fc4a3507b519fa7e8152050 # v1.4.1
         with:
+          # Match the runner's native arch; the action defaults to x86_64, which
+          # would force slow (and here broken) QEMU emulation on the arm64 runner
+          arch: aarch64
           branch: latest-stable
           packages: >
             alpine-sdk cargo cargo-auditable openssl-dev xz-dev zstd-dev
