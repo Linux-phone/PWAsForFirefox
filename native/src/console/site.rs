@@ -3,7 +3,6 @@ use std::io;
 use std::io::Write;
 
 use anyhow::{Context, Result, bail};
-use cfg_if::cfg_if;
 use log::{info, warn};
 use ulid::Ulid;
 use url::Url;
@@ -157,12 +156,13 @@ impl Run for SiteLaunchCommand {
         };
 
         info!("Launching the web app");
-        cfg_if! {
-            if #[cfg(platform_macos)] {
-                site.launch(&dirs, &runtime, &storage.config, &url, args, storage.variables)?.wait()?;
-            } else {
-                site.launch(&dirs, &runtime, &storage.config, &url, args, storage.variables)?;
-            }
+        let mut child = site.launch(&dirs, &runtime, &storage.config, &url, args, storage.variables)?;
+
+        // Wait for the web app to exit when running in the foreground. On macOS this is always
+        // required so the launcher process stays alive. The `--foreground` flag enables it on
+        // other platforms, e.g. to run a web app as a systemd service for background notifications.
+        if cfg!(platform_macos) || self.foreground {
+            child.wait()?;
         }
 
         Ok(())
@@ -247,6 +247,7 @@ impl SiteInstallCommand {
                 url: vec![],
                 protocol: None,
                 arguments: vec![],
+                foreground: false,
                 #[cfg(platform_macos)]
                 direct_launch: false,
             };
