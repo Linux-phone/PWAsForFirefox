@@ -952,6 +952,9 @@ jobs:
           # Match the runner's native arch; the action defaults to x86_64, which
           # would force slow (and here broken) QEMU emulation on the arm64 runner
           arch: aarch64
+          # The apk-tools-url default is the x86_64 apk.static, which cannot run
+          # on the arm64 runner; point it at the aarch64 build instead
+          apk-tools-url: https://gitlab.alpinelinux.org/api/v4/projects/5/packages/generic/v2.14.10/aarch64/apk.static#!sha256!e471d35aa221d031abe9b6288aede12a8e9f1a398954e5a2e1d1bce1727b4ef4
           branch: latest-stable
           packages: >
             alpine-sdk cargo cargo-auditable openssl-dev xz-dev zstd-dev
