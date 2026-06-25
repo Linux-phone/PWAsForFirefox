@@ -17,6 +17,13 @@
 # To include uncommitted changes, either commit them first or replace the
 # `git archive` command with a `tar` of your working tree using the same prefix.
 #
+# CI / signed repository:
+# On a `v*` tag, the `build-apk` job in .github/workflows/native.yaml overrides
+# `pkgver` with the tag, builds this APKBUILD in an Alpine chroot, signs it with
+# the persistent abuild key (secret ABUILD_PRIVKEY / variable ABUILD_KEY_NAME),
+# attaches the .apk to the GitHub Release, and publishes a signed aarch64 repo to
+# GitHub Pages. Install instructions are generated on the repo's index page.
+#
 pkgname=firefoxpwa
 # Keep the major version aligned with the browser extension you use (the extension
 # refuses to talk to a native program with a different major version). The official
