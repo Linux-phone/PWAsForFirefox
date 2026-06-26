@@ -13,8 +13,81 @@ use tempfile::{NamedTempFile, TempDir};
 use crate::components::site::Site;
 use crate::directories::ProjectDirs;
 
-// TODO: Remove this constant and implement variable firefox path into user documentation
+/// Conventional location of a system-installed Firefox, used as the final fallback
+/// when resolving the linked runtime. See [`resolve_system_runtime_dir`] for the full
+/// resolution order and the `FFPWA_LINKED_RUNTIME` override.
 pub const FFOX: &str = "/usr/lib/firefox/";
+
+/// Resolve the directory of the system-installed Firefox to link against.
+///
+/// Resolution priority:
+/// 1. Explicit override: `config.linked_runtime_path`, falling back to the
+///    `FFPWA_LINKED_RUNTIME` environment variable.
+/// 2. Auto-detection: locate `firefox` on `PATH`, canonicalize it (following the
+///    `/usr/bin/firefox` -> `/usr/lib/firefox/firefox` symlink) and take its parent.
+/// 3. Fallback: [`FFOX`] (`/usr/lib/firefox/`).
+///
+/// Returns [`None`] if no valid runtime directory could be found.
+#[cfg(any(platform_linux, platform_bsd))]
+pub fn resolve_system_runtime_dir(config: &crate::storage::Config) -> Option<PathBuf> {
+    // 1. Explicit override from config or environment variable
+    let override_path =
+        config.linked_runtime_path.clone().or_else(|| std::env::var("FFPWA_LINKED_RUNTIME").ok());
+    if let Some(path) = override_path {
+        let dir = PathBuf::from(path);
+        if is_valid_runtime_dir(&dir) {
+            return Some(dir);
+        }
+        warn!(
+            "Configured linked runtime path does not contain a valid Firefox installation: {}",
+            dir.display()
+        );
+    }
+
+    // 2. Auto-detect by locating `firefox` on PATH and following symlinks
+    if let Some(dir) = find_firefox_on_path() {
+        return Some(dir);
+    }
+
+    // 3. Fallback to the conventional location
+    let fallback = PathBuf::from(FFOX);
+    if is_valid_runtime_dir(&fallback) {
+        return Some(fallback);
+    }
+
+    None
+}
+
+/// Locate a `firefox` executable on `PATH` and return its install directory.
+///
+/// The executable is canonicalized to follow symlinks (e.g. `/usr/bin/firefox` ->
+/// `/usr/lib/firefox/firefox`), and its parent directory is returned only if it looks
+/// like a real Firefox runtime directory.
+#[cfg(any(platform_linux, platform_bsd))]
+fn find_firefox_on_path() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join("firefox");
+        if !candidate.is_file() {
+            continue;
+        }
+        let resolved = match std::fs::canonicalize(&candidate) {
+            Ok(resolved) => resolved,
+            Err(_) => continue,
+        };
+        if let Some(parent) = resolved.parent().filter(|parent| is_valid_runtime_dir(parent)) {
+            return Some(parent.to_path_buf());
+        }
+    }
+    None
+}
+
+/// Check whether a directory contains a usable Firefox runtime.
+#[cfg(any(platform_linux, platform_bsd))]
+fn is_valid_runtime_dir(dir: &Path) -> bool {
+    dir.join("firefox").is_file()
+        && (dir.join("application.ini").is_file() || dir.join("libxul.so").is_file())
+}
 
 cfg_if! {
     if #[cfg(any(platform_linux, platform_bsd))] {
@@ -235,12 +308,21 @@ impl Runtime {
     }
 
     #[cfg(not(feature = "immutable-runtime"))]
+    #[cfg_attr(runtime_musl, allow(unreachable_code))]
     pub fn install(self) -> Result<()> {
         const TEMP_FILE_ERROR: &str = "Failed to create a temporary file";
         const DOWNLOAD_ERROR: &str = "Failed to download the runtime";
         const EXTRACT_ERROR: &str = "Failed to extract the runtime";
         const COPY_ERROR: &str = "Failed to copy the runtime";
         const CLEANUP_ERROR: &str = "Failed to clean up the runtime";
+
+        // Mozilla does not provide a musl Firefox build, so the downloaded runtime cannot run
+        // on musl systems. Such systems must use a linked (system) runtime instead.
+        #[cfg(runtime_musl)]
+        anyhow::bail!(
+            "Downloading the Mozilla runtime is not supported on musl systems; \
+             use a linked runtime instead (`firefoxpwa runtime install --link`)"
+        );
 
         #[cfg(platform_linux)]
         {
@@ -351,35 +433,53 @@ impl Runtime {
         let dirs = ProjectDirs::new()?;
         let mut storage = Storage::load(&dirs)?;
 
+        // Resolve the system Firefox before uninstalling the existing runtime, so a failed
+        // resolution does not leave the user without any usable runtime.
+        let source = resolve_system_runtime_dir(&storage.config)
+            .context("Could not locate a system Firefox installation to link against")?;
+
         self.uninstall()?;
 
         storage.config.use_linked_runtime = true;
 
         info!("Linking the runtime");
 
-        if Path::new(FFOX).exists() {
-            for entry in read_dir(FFOX)?.flatten() {
-                let entry = entry.path();
-                match entry.file_name().expect("Couldn't retrieve a file name").to_str() {
-                    // Use a different branch for the "defaults" folder due to the patches to apply afterwhile
-                    Some("defaults") => {
-                        create_dir_all(self.directory.join("defaults/pref"))?;
-                        symlink(
-                            entry.join("defaults/pref/channel-prefs.js"),
-                            self.directory.join("defaults/pref/channel-prefs.js"),
-                        )?;
-                    }
-                    Some("firefox-bin") => {
-                        copy(entry, self.directory.join("firefox-bin"))?;
-                    }
-                    Some("firefox") => {
-                        copy(entry, self.directory.join("firefox"))?;
-                    }
-                    Some(&_) => {
-                        let link = self.directory.join(entry.file_name().unwrap());
-                        symlink(entry, link)?;
-                    }
-                    None => todo!(),
+        // The runtime directory may not exist yet (e.g. on a fresh install that never
+        // downloaded a Mozilla runtime), so create it before copying or linking into it.
+        create_dir_all(&self.directory).context("Failed to create the runtime directory")?;
+
+        for entry in read_dir(&source)?.flatten() {
+            let entry = entry.path();
+            let file_name = match entry.file_name().and_then(|name| name.to_str()) {
+                Some(file_name) => file_name,
+                None => {
+                    warn!("Skipping runtime entry with a non-UTF-8 file name: {}", entry.display());
+                    continue;
+                }
+            };
+            match file_name {
+                // Use a different branch for the "defaults" folder due to the patches to apply afterwhile
+                "defaults" => {
+                    create_dir_all(self.directory.join("defaults/pref"))
+                        .context("Failed to create the runtime defaults directory")?;
+                    symlink(
+                        entry.join("defaults/pref/channel-prefs.js"),
+                        self.directory.join("defaults/pref/channel-prefs.js"),
+                    )
+                    .context("Failed to link channel-prefs.js")?;
+                }
+                "firefox-bin" => {
+                    copy(&entry, self.directory.join("firefox-bin"))
+                        .context("Failed to copy firefox-bin")?;
+                }
+                "firefox" => {
+                    copy(&entry, self.directory.join("firefox"))
+                        .context("Failed to copy firefox")?;
+                }
+                _ => {
+                    let link = self.directory.join(file_name);
+                    symlink(&entry, &link)
+                        .with_context(|| format!("Failed to link {}", link.display()))?;
                 }
             }
         }
